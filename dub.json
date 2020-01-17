@@ -1,0 +1,12 @@
+{
+	"authors": [
+		"Cédric Picard"
+	],
+	"copyright": "Copyright © 2020, Cédric Picard",
+	"dependencies": {
+		"arsd-official:simpledisplay": "~>5.0.2"
+	},
+	"description": "Simple binary visualization",
+	"license": "MIT",
+	"name": "lookout"
+}
