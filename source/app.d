@@ -11,10 +11,13 @@ struct WeighedPixel {
     ubyte position;
 
     void increase(ubyte new_position) {
-        if (weight == 0)
+        if (weight == 0) {
             position = new_position;
-        else
-            position = (position + new_position) / 2;
+            weight = 1;
+            return;
+        }
+
+        position = (position + new_position) / 2;
 
         if (weight < 255)
             weight += 1;
@@ -123,6 +126,63 @@ class WindowRegion : Region {
     }
 }
 
+class BitmapRegion : Region {
+    size_t capacity;
+    ubyte[] bitmap;
+
+    this(Point origin, Point end, ubyte[] data) {
+        super(origin, end);
+
+        this.capacity = (end.x - origin.x) * (end.y - origin.y) / 8;
+
+        if (data.length < this.capacity)
+            data ~= repeat(0).take(this.capacity - data.length)
+                             .map!(to!ubyte)
+                             .array;
+
+        ubyte[] bitsOf(ubyte x) {
+            ubyte[] result;
+
+            foreach (i ; 1 .. 9)
+                result ~= (x >> (8-i)) % 2;
+
+            return result;
+        }
+
+        data.randomSample(capacity)
+            .map!(x => bitsOf(x))
+            .each!writeln;
+
+        this.bitmap = data.randomSample(capacity)
+                          .map!(x => bitsOf(x))
+                          .join
+                          .array;
+    }
+
+    override
+    void redraw(ScreenPainter painter) {
+        painter.fillColor = Color.green;
+        painter.outlineColor = Color.green;
+
+        int x = origin.x;
+        int y = origin.y;
+
+        foreach (i,b ; bitmap[].enumerate) {
+            x += 1;
+            if (x >= end.x) {
+                x = origin.x;
+                y += 1;
+            }
+
+            if (b == 0)
+                continue;
+
+            painter.drawRectangle(Point(x, y),
+                                  Point(x + 1, y));
+        }
+    }
+}
+
 void redraw(SimpleWindow window, Region[] regions) {
     auto painter = window.draw();
     painter.clear();
@@ -130,7 +190,6 @@ void redraw(SimpleWindow window, Region[] regions) {
     painter.fillColor    = Color.black;
     painter.outlineColor = Color.black;
     painter.drawRectangle(Point(0, 0), Point(window.width, window.height));
-
 
     foreach (region ; regions)
         region.redraw(painter);
@@ -140,6 +199,8 @@ void rescale(ref WeighedMap weighedMap) {
     ubyte maxweight;
     foreach (x ; 0 .. 256) {
         foreach (y ; 0 .. 256) {
+            if (weighedMap[x][y].weight != 0 && weighedMap[x][y].weight < 10)
+                weighedMap[x][y].weight = 10;
             if (weighedMap[x][y].weight > maxweight)
                 maxweight = weighedMap[x][y].weight;
         }
@@ -148,7 +209,7 @@ void rescale(ref WeighedMap weighedMap) {
     if (maxweight == 255)
         return;
 
-    ulong ratio = 256 / maxweight;
+    ulong ratio = 255 / maxweight;
 
     foreach (x ; 0 .. 256) {
         foreach (y ; 0 .. 256) {
@@ -164,7 +225,8 @@ int main(string[] args) {
         return 1;
     }
 
-    auto window = new SimpleWindow(256*pxsize + 20, 256*pxsize + 20,
+    auto window = new SimpleWindow(256*pxsize + 20 + 256,
+                                   256*pxsize + 20,
                                    "Lookout: " ~ args[1]);
 
     ubyte[] data = cast(ubyte[])read(args[1]);
@@ -193,9 +255,17 @@ int main(string[] args) {
                                          Point(256*pxsize + 20, 256*pxsize),
                                          weighedMap);
 
+    auto bitmapRegion = new BitmapRegion(
+                                Point(256*pxsize + 20, 0),
+                                Point(256*(pxsize+1) + 20, 256*pxsize),
+                                data
+                            );
+
+
     Region[] regionsToBeDrawn = [
         wmRegion,
         windowRegion,
+        bitmapRegion,
     ];
 
     bool hasChanged;
