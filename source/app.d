@@ -202,11 +202,11 @@ class WindowRegion : Region {
         }
 
         if (!addressOne.isNull) {
-            auto textPosition = Point(end.x-506, end.y-20+2);
+            auto textPosition = Point(end.x-486, end.y-20+2);
 
             if (addressTwo.isNull) {
                 painter.drawText(textPosition,
-                                 format("%010X - %010X",
+                                 format("%09X - %09X",
                                         addressOne.get(), addressOne.get()));
             }
             else {
@@ -216,7 +216,7 @@ class WindowRegion : Region {
                                         this.addressTwo.get());
 
                 painter.drawText(textPosition,
-                                 format("%010X - %010X",
+                                 format("%09X - %09X",
                                         addressOne, addressTwo));
             }
         }
@@ -351,7 +351,7 @@ class HexdumpRegion : Region {
         foreach (i, c ; data[address .. address + 8*45].chunks(8).enumerate())
         {
             result ~= format(
-                        "%010X  %02X%02X%02X%02X %02X%02X%02X%02X  %s\n",
+                        "%09X  %02X%02X%02X%02X %02X%02X%02X%02X  %s\n",
                         address + i*8,
                         c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
                         c.map!(x => x.isGraphical ? x : '.')
@@ -421,7 +421,7 @@ int main(string[] args) {
         return 1;
     }
 
-    auto window = new SimpleWindow(256*pxsize + 20 + 256 + 300,
+    auto window = new SimpleWindow(256*pxsize + 20 + 256 + 280,
                                    256*pxsize + 20,
                                    "Lookout: " ~ args[1]);
 
@@ -471,7 +471,7 @@ int main(string[] args) {
 
     auto hexdumpRegion = new HexdumpRegion(
                                 Point(bitmapRegion.end.x, 0),
-                                Point(bitmapRegion.end.x + 300, window.height),
+                                Point(bitmapRegion.end.x + 280, window.height),
                                 data
                             );
 
