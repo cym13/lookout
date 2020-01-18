@@ -5,10 +5,10 @@ import arsd.simpledisplay;
 
 auto pxsize = 3;
 
-
 struct WeighedPixel {
-    ubyte weight;
-    ubyte position;
+    ubyte  weight;
+    ubyte  position;
+    size_t address;
 
     void increase(ubyte new_position) {
         if (weight == 0) {
@@ -25,6 +25,26 @@ struct WeighedPixel {
 }
 
 alias WeighedMap = WeighedPixel[256][256];
+
+struct AddressRange {
+    size_t origin;
+    size_t end;
+
+    this(size_t origin, size_t end) {
+        if (origin > end) {
+            this.origin = end;
+            this.end    = origin;
+        }
+        else {
+            this.origin = origin;
+            this.end    = end;
+        }
+    }
+
+    bool contains(size_t address) {
+        return (origin <= address && address <= end);
+    }
+}
 
 class Region {
     Point origin;
@@ -46,10 +66,19 @@ bool inRegion(Point p, Region r) {
 class WeighedMapRegion : Region {
     WeighedMap weighedMap;
     Nullable!Point cross;
+    Nullable!AddressRange displayRange;
 
     this(Point origin, Point end, WeighedMap wmap) {
         super(origin, end);
         this.weighedMap = wmap;
+    }
+
+    void setDisplayRange(size_t start, size_t finish) {
+        displayRange = AddressRange(start, finish);
+    }
+
+    void removeDisplayRange() {
+        displayRange = Nullable!AddressRange.init;
     }
 
     override
@@ -72,7 +101,11 @@ class WeighedMapRegion : Region {
 
         foreach (x ; 0..256) {
             foreach (y ; 0..256) {
+                if (displayRange.isNull ||
+                        displayRange.get().contains(weighedMap[x][y].address))
+                {
                     drawPixel(x, y, weighedMap[x][y]);
+                }
             }
         }
 
@@ -81,10 +114,10 @@ class WeighedMapRegion : Region {
 
         painter.fillColor    = Color.red;
         painter.outlineColor = Color.red;
-        painter.drawLine(Point(cross.get.x, origin.y),
-                         Point(cross.get.x, end.y));
-        painter.drawLine(Point(origin.x, cross.get.y),
-                         Point(end.x, cross.get.y));
+        painter.drawLine(Point(cross.get().x, origin.y),
+                         Point(cross.get().x, end.y));
+        painter.drawLine(Point(origin.x, cross.get().y),
+                         Point(end.x, cross.get().y));
 
     }
 
@@ -98,7 +131,9 @@ class WeighedMapRegion : Region {
 }
 
 class WindowRegion : Region {
-    Nullable!Point coordinates;
+    Nullable!Point  coordinates;
+    Nullable!size_t addressOne;
+    Nullable!size_t addressTwo;
 
     this(Point origin, Point end) {
         super(origin, end);
@@ -112,26 +147,61 @@ class WindowRegion : Region {
         coordinates = Nullable!Point.init;
     }
 
+    void setAddressTextOne(size_t address) {
+        this.addressOne = address;
+    }
+
+    void setAddressTextTwo(size_t address) {
+        this.addressTwo = address;
+    }
+
+    void removeAddressTextTwo() {
+        this.addressTwo = Nullable!size_t.init;
+    }
+
     override
     void redraw(ScreenPainter painter) {
+        painter.fillColor    = Color.white;
+        painter.outlineColor = Color.white;
+
         if (!coordinates.isNull) {
-            painter.outlineColor = Color.white;
+            painter.drawText(Point(origin.x+2, coordinates.get().y-5),
+                             format("%02X", 255-(coordinates.get().y / pxsize)));
+            painter.drawText(Point(coordinates.get().x-5, end.y-20+2),
+                             format("%02X", (coordinates.get().x-20) / pxsize));
+        }
 
+        if (!addressOne.isNull) {
+            if (addressTwo.isNull) {
+                painter.drawText(Point(end.x-200, end.y-20+2),
+                                 format("%010X - %010X",
+                                        addressOne.get(), addressOne.get()));
+            }
+            else {
+                size_t addressOne = min(this.addressOne.get(),
+                                        this.addressTwo.get());
+                size_t addressTwo = max(this.addressOne.get(),
+                                        this.addressTwo.get());
 
-            painter.drawText(Point(origin.x+2, coordinates.get.y-5),
-                             format("%02X", 255-(coordinates.get.y / pxsize)));
-            painter.drawText(Point(coordinates.get.x-5, end.y-20+2),
-                             format("%02X", (coordinates.get.x-20) / pxsize));
+                painter.drawText(Point(end.x-200, end.y-20+2),
+                                 format("%010X - %010X",
+                                        addressOne, addressTwo));
+            }
         }
     }
 }
 
 class BitmapRegion : Region {
-    size_t capacity;
+    size_t  capacity;
     ubyte[] bitmap;
+    Point   markOne;
+    Point   markTwo;
+    bool    selecting;
 
     this(Point origin, Point end, ubyte[] data) {
         super(origin, end);
+
+        this.markOne = Point(origin.x, origin.y);
 
         this.capacity = (end.x - origin.x) * (end.y - origin.y) / 8;
 
@@ -149,21 +219,32 @@ class BitmapRegion : Region {
             return result;
         }
 
-        data.randomSample(capacity)
-            .map!(x => bitsOf(x))
-            .each!writeln;
-
         this.bitmap = data.randomSample(capacity)
                           .map!(x => bitsOf(x))
                           .join
                           .array;
     }
 
+    void setMarkOne(Point p) {
+        markOne = p;
+    }
+
+    void removeMarkOne() {
+        markOne = Point(origin.x, origin.y);
+    }
+
+    void setMarkTwo(Point p) {
+        selecting = true;
+        markTwo = p;
+    }
+
+    void removeMarkTwo() {
+        selecting = false;
+        markOne = Point(end.x, end.y);
+    }
+
     override
     void redraw(ScreenPainter painter) {
-        painter.fillColor = Color.green;
-        painter.outlineColor = Color.green;
-
         int x = origin.x;
         int y = origin.y;
 
@@ -177,8 +258,32 @@ class BitmapRegion : Region {
             if (b == 0)
                 continue;
 
+            if (selecting && (y < min(markOne.y, markTwo.y) ||
+                              y > max(markOne.y, markTwo.y)))
+            {
+                painter.fillColor    = Color.gray;
+                painter.outlineColor = Color.gray;
+            }
+            else {
+                painter.fillColor    = Color.green;
+                painter.outlineColor = Color.green;
+            }
+
             painter.drawRectangle(Point(x, y),
                                   Point(x + 1, y));
+        }
+
+        if (!selecting) {
+            painter.outlineColor = Color.red;
+            painter.drawLine(Point(origin.x, markOne.y),
+                             Point(end.x, markOne.y));
+        }
+        else {
+            painter.outlineColor = Color.red;
+            painter.drawLine(Point(origin.x, markOne.y),
+                             Point(end.x, markOne.y));
+            painter.drawLine(Point(origin.x, markTwo.y),
+                             Point(end.x, markTwo.y));
         }
     }
 }
@@ -243,6 +348,7 @@ int main(string[] args) {
         ubyte y = 255 - coordinates[1];
 
         weighedMap[x][y].increase(cast(ubyte) (index * 256 / data.length));
+        weighedMap[x][y].address = index;
     }
 
     weighedMap.rescale();
@@ -269,6 +375,8 @@ int main(string[] args) {
     ];
 
     bool hasChanged;
+    bool isSelecting;
+    size_t addressOne, addressTwo;
 
     window.redraw(regionsToBeDrawn);
     window.eventLoop(20,
@@ -279,6 +387,7 @@ int main(string[] args) {
             }
         },
         delegate (MouseEvent event) {
+            // Mouse in weighedmap panel
             if (Point(event.x, event.y).inRegion(wmRegion)) {
                 wmRegion.setCross(Point(event.x, event.y));
                 windowRegion.setCoordinateText(Point(event.x, event.y));
@@ -286,6 +395,40 @@ int main(string[] args) {
             else {
                 wmRegion.removeCross();
                 windowRegion.removeCoordinateText();
+            }
+
+            // Mouse in bitmap panel
+            if (Point(event.x, event.y).inRegion(bitmapRegion)) {
+                if (!isSelecting) {
+                    bitmapRegion.setMarkOne(Point(event.x, event.y));
+
+                    addressOne = event.y * data.length
+                              / (bitmapRegion.end.y - bitmapRegion.origin.y);
+
+                    if (!bitmapRegion.selecting)
+                        windowRegion.setAddressTextOne(addressOne);
+                }
+
+                if (event.type == MouseEventType.motion &&
+                        event.modifierState & ModifierState.leftButtonDown) {
+                    isSelecting = true;
+
+                    bitmapRegion.setMarkTwo(Point(event.x, event.y));
+                    addressTwo = event.y * data.length
+                          / (bitmapRegion.end.y - bitmapRegion.origin.y);
+                    windowRegion.setAddressTextTwo(addressTwo);
+
+                    wmRegion.setDisplayRange(addressOne, addressTwo);
+                }
+            }
+
+            // Stop address range selection
+            if (isSelecting && event.type == MouseEventType.buttonPressed) {
+                isSelecting = false;
+                bitmapRegion.removeMarkTwo();
+                windowRegion.removeAddressTextTwo();
+
+                wmRegion.removeDisplayRange();
             }
 
             hasChanged = true;
