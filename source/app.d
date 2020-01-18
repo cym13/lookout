@@ -8,7 +8,7 @@ auto pxsize = 3;
 struct WeighedPixel {
     ubyte  weight;
     ubyte  position;
-    size_t address;
+    size_t[] addresses;
 
     void increase(ubyte new_position) {
         if (weight == 0) {
@@ -29,6 +29,7 @@ alias WeighedMap = WeighedPixel[256][256];
 struct AddressRange {
     size_t origin;
     size_t end;
+    size_t length;
 
     this(size_t origin, size_t end) {
         if (origin > end) {
@@ -39,10 +40,16 @@ struct AddressRange {
             this.origin = origin;
             this.end    = end;
         }
+
+        this.length = this.end - this.origin;
     }
 
     bool contains(size_t address) {
-        return (origin <= address && address <= end);
+        return origin <= address && address <= end;
+    }
+
+    bool containsAny(size_t[] addresses) {
+        return addresses[].any!(address => origin <= address && address <= end);
     }
 }
 
@@ -65,24 +72,41 @@ bool inRegion(Point p, Region r) {
 }
 
 class WeighedMapRegion : Region {
-    WeighedMap weighedMap;
+    WeighedMap     weighedMap;
     Nullable!Point cross;
-    Nullable!AddressRange displayRange;
+    AddressRange   displayRange;
+    size_t         dataLength;
 
-    this(Point origin, Point end, WeighedMap wmap) {
+    /* This cache maintains address positions relatively to an
+     * AddressRange. It avoids searching in-range addresses and computing
+     * their mean address when the range doesn't change accross redraws.
+     */
+    struct CacheAddress {
+        bool  isInRange;
+        ubyte position;
+    }
+    CacheAddress[256][256] positionCache;
+    bool hasPositionCache = false;
+
+    this(Point origin, Point end, WeighedMap wmap, size_t dataLength) {
         super(origin, end);
         this.weighedMap = wmap;
+        this.dataLength = dataLength;
+        displayRange = AddressRange(0, dataLength);
+
         hasChanged = true;
     }
 
     void setDisplayRange(size_t start, size_t finish) {
-        displayRange = AddressRange(start, finish);
-        hasChanged = true;
+        displayRange     = AddressRange(start, finish);
+        hasPositionCache = false;
+        hasChanged       = true;
     }
 
     void removeDisplayRange() {
-        displayRange = Nullable!AddressRange.init;
-        hasChanged = true;
+        displayRange     = AddressRange(0, dataLength);
+        hasPositionCache = false;
+        hasChanged       = true;
     }
 
     override
@@ -92,15 +116,18 @@ class WeighedMapRegion : Region {
 
         hasChanged = false;
 
+        if (displayRange.length == 0)
+            return;
+
         painter.fillColor    = Color.black;
         painter.outlineColor = Color.black;
         painter.drawRectangle(origin, end);
 
-        void drawPixel(int x, int y, WeighedPixel pixel) {
+        void drawPixel(int x, int y, ubyte weight, ubyte position) {
             Color pixelColor = Color.fromIntegers(
-                                           pixel.position*pixel.weight/64,
-                                           pixel.weight,
-                                           (256-pixel.position)*pixel.weight/64,
+                                           position*weight/64,
+                                           weight,
+                                           (256-position)*weight/64,
                                        );
 
             painter.fillColor    = pixelColor;
@@ -117,13 +144,45 @@ class WeighedMapRegion : Region {
                 if (weighedMap[x][y].weight == 0)
                     continue;
 
-                if (displayRange.isNull ||
-                        displayRange.get().contains(weighedMap[x][y].address))
-                {
-                    drawPixel(x, y, weighedMap[x][y]);
+                if (hasPositionCache) {
+                    if (positionCache[x][y].isInRange) {
+                        drawPixel(x, y,
+                                  weighedMap[x][y].weight,
+                                  positionCache[x][y].position);
+                    }
+                    continue;
                 }
+
+                // No cache available yet, computing it
+
+                size_t[] addrInRange;
+
+                foreach (addr ; weighedMap[x][y].addresses)
+                    if (displayRange.contains(addr))
+                        addrInRange ~= addr;
+
+                if (addrInRange.length == 0) {
+                    positionCache[x][y].isInRange = false;
+                    continue;
+                }
+                else {
+                    positionCache[x][y].isInRange = true;
+                }
+
+                ulong meanAddr = addrInRange.fold!"a+b" / addrInRange.length;
+
+                // Garanted < 256
+                ubyte position = ((meanAddr-displayRange.origin)
+                                    * 256 / displayRange.length) % 256;
+
+                positionCache[x][y].position  = position;
+
+                drawPixel(x, y, weighedMap[x][y].weight, position);
             }
         }
+
+        // Now we have a cache
+        hasPositionCache = true;
 
         if (cross.isNull)
             return;
@@ -448,7 +507,7 @@ int main(string[] args) {
         ubyte y = 255 - coordinates[1];
 
         weighedMap[x][y].increase(cast(ubyte) (index * 256 / data.length));
-        weighedMap[x][y].address = index;
+        weighedMap[x][y].addresses ~= index;
     }
 
     weighedMap.rescale();
@@ -461,7 +520,8 @@ int main(string[] args) {
     auto wmRegion = new WeighedMapRegion(
                                 Point(20, 0),
                                 Point(256*pxsize + 20, 256*pxsize),
-                                weighedMap
+                                weighedMap,
+                                data.length
                             );
 
     // Padd small files
