@@ -13,3 +13,6 @@ lookout-test-*
 *.o
 *.obj
 *.lst
+trace.log
+trace.def
+profilegc.log
