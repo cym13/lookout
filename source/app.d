@@ -114,6 +114,9 @@ class WeighedMapRegion : Region {
 
         foreach (x ; 0..256) {
             foreach (y ; 0..256) {
+                if (weighedMap[x][y].weight == 0)
+                    continue;
+
                 if (displayRange.isNull ||
                         displayRange.get().contains(weighedMap[x][y].address))
                 {
@@ -125,7 +128,6 @@ class WeighedMapRegion : Region {
         if (cross.isNull)
             return;
 
-        painter.fillColor    = Color.red;
         painter.outlineColor = Color.red;
         painter.drawLine(Point(cross.get().x, origin.y),
                          Point(cross.get().x, end.y));
@@ -191,7 +193,6 @@ class WindowRegion : Region {
         painter.drawRectangle(origin, Point(origin.x + 20, end.y));
         painter.drawRectangle(Point(origin.x, end.y-20), end);
 
-        painter.fillColor    = Color.white;
         painter.outlineColor = Color.white;
 
         if (!coordinates.isNull) {
@@ -289,6 +290,11 @@ class BitmapRegion : Region {
         int x = origin.x;
         int y = origin.y;
 
+        size_t minMark = min(markOne.y, markTwo.y);
+        size_t maxMark = max(markOne.y, markTwo.y);
+
+        auto currentColor = Color.green;
+        painter.outlineColor = currentColor;
         foreach (i,b ; bitmap[].enumerate) {
             x += 1;
             if (x >= end.x) {
@@ -299,15 +305,18 @@ class BitmapRegion : Region {
             if (b == 0)
                 continue;
 
-            if (selecting && (y < min(markOne.y, markTwo.y) ||
-                              y > max(markOne.y, markTwo.y)))
+            if (selecting
+                 && currentColor == Color.green
+                 && (y < minMark || y > maxMark))
             {
-                painter.fillColor    = Color.gray;
-                painter.outlineColor = Color.gray;
+                currentColor = Color.gray;
+                painter.outlineColor = currentColor;
             }
-            else {
-                painter.fillColor    = Color.green;
-                painter.outlineColor = Color.green;
+            else if (currentColor == Color.gray
+                 && (y >= minMark && y <= maxMark))
+            {
+                currentColor = Color.green;
+                painter.outlineColor = currentColor;
             }
 
             painter.drawRectangle(Point(x, y),
