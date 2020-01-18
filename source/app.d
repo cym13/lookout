@@ -49,6 +49,7 @@ struct AddressRange {
 class Region {
     Point origin;
     Point end;
+    bool  hasChanged;
 
     this(Point origin, Point end) {
         this.origin     = origin;
@@ -71,18 +72,30 @@ class WeighedMapRegion : Region {
     this(Point origin, Point end, WeighedMap wmap) {
         super(origin, end);
         this.weighedMap = wmap;
+        hasChanged = true;
     }
 
     void setDisplayRange(size_t start, size_t finish) {
         displayRange = AddressRange(start, finish);
+        hasChanged = true;
     }
 
     void removeDisplayRange() {
         displayRange = Nullable!AddressRange.init;
+        hasChanged = true;
     }
 
     override
     void redraw(ScreenPainter painter) {
+        if (!hasChanged)
+            return;
+
+        hasChanged = false;
+
+        painter.fillColor    = Color.black;
+        painter.outlineColor = Color.black;
+        painter.drawRectangle(origin, end);
+
         void drawPixel(int x, int y, WeighedPixel pixel) {
             Color pixelColor = Color.fromIntegers(
                                            pixel.position*pixel.weight/64,
@@ -118,15 +131,16 @@ class WeighedMapRegion : Region {
                          Point(cross.get().x, end.y));
         painter.drawLine(Point(origin.x, cross.get().y),
                          Point(end.x, cross.get().y));
-
     }
 
     void setCross(Point p) {
         cross = nullable(p);
+        hasChanged = true;
     }
 
     void removeCross() {
         cross = Nullable!Point.init;
+        hasChanged = true;
     }
 }
 
@@ -137,30 +151,46 @@ class WindowRegion : Region {
 
     this(Point origin, Point end) {
         super(origin, end);
+        hasChanged = true;
     }
 
     void setCoordinateText(Point p) {
         coordinates = p;
+        hasChanged = true;
     }
 
     void removeCoordinateText() {
         coordinates = Nullable!Point.init;
+        hasChanged = true;
     }
 
     void setAddressTextOne(size_t address) {
         this.addressOne = address;
+        hasChanged = true;
     }
 
     void setAddressTextTwo(size_t address) {
         this.addressTwo = address;
+        hasChanged = true;
     }
 
     void removeAddressTextTwo() {
         this.addressTwo = Nullable!size_t.init;
+        hasChanged = true;
     }
 
     override
     void redraw(ScreenPainter painter) {
+        if (!hasChanged)
+            return;
+
+        hasChanged = false;
+
+        painter.fillColor    = Color.black;
+        painter.outlineColor = Color.black;
+        painter.drawRectangle(origin, Point(origin.x + 20, end.y));
+        painter.drawRectangle(Point(origin.x, end.y-20), end);
+
         painter.fillColor    = Color.white;
         painter.outlineColor = Color.white;
 
@@ -172,8 +202,10 @@ class WindowRegion : Region {
         }
 
         if (!addressOne.isNull) {
+            auto textPosition = Point(end.x-506, end.y-20+2);
+
             if (addressTwo.isNull) {
-                painter.drawText(Point(end.x-200, end.y-20+2),
+                painter.drawText(textPosition,
                                  format("%010X - %010X",
                                         addressOne.get(), addressOne.get()));
             }
@@ -183,7 +215,7 @@ class WindowRegion : Region {
                 size_t addressTwo = max(this.addressOne.get(),
                                         this.addressTwo.get());
 
-                painter.drawText(Point(end.x-200, end.y-20+2),
+                painter.drawText(textPosition,
                                  format("%010X - %010X",
                                         addressOne, addressTwo));
             }
@@ -205,11 +237,6 @@ class BitmapRegion : Region {
 
         this.capacity = (end.x - origin.x) * (end.y - origin.y) / 8;
 
-        if (data.length < this.capacity)
-            data ~= repeat(0).take(this.capacity - data.length)
-                             .map!(to!ubyte)
-                             .array;
-
         ubyte[] bitsOf(ubyte x) {
             ubyte[] result;
 
@@ -223,28 +250,42 @@ class BitmapRegion : Region {
                           .map!(x => bitsOf(x))
                           .join
                           .array;
+        hasChanged = true;
     }
 
     void setMarkOne(Point p) {
         markOne = p;
+        hasChanged = true;
     }
 
     void removeMarkOne() {
         markOne = Point(origin.x, origin.y);
+        hasChanged = true;
     }
 
     void setMarkTwo(Point p) {
         selecting = true;
         markTwo = p;
+        hasChanged = true;
     }
 
     void removeMarkTwo() {
         selecting = false;
         markOne = Point(end.x, end.y);
+        hasChanged = true;
     }
 
     override
     void redraw(ScreenPainter painter) {
+        if (!hasChanged)
+            return;
+
+        hasChanged = false;
+
+        painter.fillColor    = Color.black;
+        painter.outlineColor = Color.black;
+        painter.drawRectangle(origin, end);
+
         int x = origin.x;
         int y = origin.y;
 
@@ -288,13 +329,63 @@ class BitmapRegion : Region {
     }
 }
 
+class HexdumpRegion : Region {
+    size_t address;
+    ubyte[] data;
+
+    this(Point origin, Point end, ref ubyte[] data) {
+        super(origin, end);
+        this.data = data;
+        hasChanged = true;
+    }
+
+    string hexdump(size_t address) {
+        import std.ascii: isGraphical;
+
+        address = address - (address % 16);
+
+        // TODO make it better
+
+        string result;
+
+        foreach (i, c ; data[address .. address + 8*45].chunks(8).enumerate())
+        {
+            result ~= format(
+                        "%010X  %02X%02X%02X%02X %02X%02X%02X%02X  %s\n",
+                        address + i*8,
+                        c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
+                        c.map!(x => x.isGraphical ? x : '.')
+                         .map!(x => (cast(char) x).to!string)
+                         .join()
+                    );
+        }
+        return result;
+    }
+
+    void setAddress(size_t address) {
+        this.address = address;
+        hasChanged = true;
+    }
+
+    override
+    void redraw(ScreenPainter painter) {
+        if (!hasChanged)
+            return;
+
+        hasChanged = false;
+
+        painter.fillColor    = Color.black;
+        painter.outlineColor = Color.black;
+        painter.drawRectangle(origin, end);
+
+        painter.outlineColor = Color.white;
+
+        painter.drawText(Point(origin.x + 5, origin.y + 5), hexdump(address));
+    }
+}
+
 void redraw(SimpleWindow window, Region[] regions) {
     auto painter = window.draw();
-    painter.clear();
-
-    painter.fillColor    = Color.black;
-    painter.outlineColor = Color.black;
-    painter.drawRectangle(Point(0, 0), Point(window.width, window.height));
 
     foreach (region ; regions)
         region.redraw(painter);
@@ -330,7 +421,7 @@ int main(string[] args) {
         return 1;
     }
 
-    auto window = new SimpleWindow(256*pxsize + 20 + 256,
+    auto window = new SimpleWindow(256*pxsize + 20 + 256 + 300,
                                    256*pxsize + 20,
                                    "Lookout: " ~ args[1]);
 
@@ -355,36 +446,49 @@ int main(string[] args) {
 
     auto windowRegion = new WindowRegion(
                                 Point(0, 0),
-                                Point(window.width, window.height));
-
-    auto wmRegion = new WeighedMapRegion(Point(20, 0),
-                                         Point(256*pxsize + 20, 256*pxsize),
-                                         weighedMap);
-
-    auto bitmapRegion = new BitmapRegion(
-                                Point(256*pxsize + 20, 0),
-                                Point(256*(pxsize+1) + 20, 256*pxsize),
-                                data
+                                Point(window.width, window.height)
                             );
 
+    auto wmRegion = new WeighedMapRegion(
+                                Point(20, 0),
+                                Point(256*pxsize + 20, 256*pxsize),
+                                weighedMap
+                            );
+
+    // Padd small files
+    auto bitmapOrigin = Point(wmRegion.end.x, 0);
+    auto bitmapEnd    = Point(wmRegion.end.x + 256, 256*pxsize);
+    auto bitmapCapacity = (bitmapEnd.x - bitmapOrigin.x)
+                        * (bitmapEnd.y - bitmapOrigin.y) / 8;
+
+    if (data.length < bitmapCapacity) {
+        data ~= repeat(0).take(bitmapCapacity - data.length)
+                         .map!(to!ubyte)
+                         .array;
+    }
+
+    auto bitmapRegion = new BitmapRegion(bitmapOrigin, bitmapEnd, data);
+
+    auto hexdumpRegion = new HexdumpRegion(
+                                Point(bitmapRegion.end.x, 0),
+                                Point(bitmapRegion.end.x + 300, window.height),
+                                data
+                            );
 
     Region[] regionsToBeDrawn = [
         wmRegion,
         windowRegion,
         bitmapRegion,
+        hexdumpRegion,
     ];
 
-    bool hasChanged;
     bool isSelecting;
     size_t addressOne, addressTwo;
 
     window.redraw(regionsToBeDrawn);
     window.eventLoop(20,
         delegate () {
-            if (hasChanged) {
-                hasChanged = false;
-                window.redraw(regionsToBeDrawn);
-            }
+            window.redraw(regionsToBeDrawn);
         },
         delegate (MouseEvent event) {
             // Mouse in weighedmap panel
@@ -399,14 +503,18 @@ int main(string[] args) {
 
             // Mouse in bitmap panel
             if (Point(event.x, event.y).inRegion(bitmapRegion)) {
+                hexdumpRegion.setAddress(event.y * data.length
+                              / (bitmapRegion.end.y - bitmapRegion.origin.y));
+
                 if (!isSelecting) {
                     bitmapRegion.setMarkOne(Point(event.x, event.y));
 
                     addressOne = event.y * data.length
                               / (bitmapRegion.end.y - bitmapRegion.origin.y);
 
-                    if (!bitmapRegion.selecting)
+                    if (!bitmapRegion.selecting) {
                         windowRegion.setAddressTextOne(addressOne);
+                    }
                 }
 
                 if (event.type == MouseEventType.motion &&
@@ -430,8 +538,6 @@ int main(string[] args) {
 
                 wmRegion.removeDisplayRange();
             }
-
-            hasChanged = true;
         },
     );
 
