@@ -14,7 +14,7 @@ import lookout.globalState;
 import lookout.hexdumpRegion;
 import lookout.region;
 import lookout.weighedMap;
-import lookout.weighedRegion;
+import lookout.weighedMapRegion;
 import lookout.windowRegion;
 
 void redraw(SimpleWindow window, Region[] regions, OperatingSystemFont font) {

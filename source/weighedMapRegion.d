@@ -1,4 +1,4 @@
-module lookout.weighedRegion;
+module lookout.weighedMapRegion;
 
 import std.algorithm;
 import std.typecons;

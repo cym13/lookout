@@ -17,7 +17,7 @@ References
 ==========
 
 I strongly recommend watching `that video`__ from Christopher Domas about Cantor
-Dust, a program he wrote and never released that servers the same purpose.
+Dust, a program he wrote and never released that serves the same purpose.
 
 .. _video: https://www.youtube.com/watch?v=4bM3Gut1hIk
 
