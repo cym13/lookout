@@ -37,18 +37,23 @@ int main(string[] args) {
 
     ubyte[] data = cast(ubyte[])read(args[1]);
 
+
     // Sample big files
+    ubyte[] sampledData;
+
     if (data.length > 1024*1024)
-        data = data.randomSample(1024*1024).array;
+        sampledData = data.randomSample(1024*1024).array;
+    else
+        sampledData = data;
 
     WeighedMap weighedMap;
 
     // Populate weighedMap
-    foreach (index, coordinates ; data.slide(2).enumerate()) {
+    foreach (index, coordinates ; sampledData.slide(2).enumerate()) {
         ubyte x = coordinates[0];
         ubyte y = 255 - coordinates[1];
 
-        weighedMap[x][y].increase(cast(ubyte) (index * 256 / data.length));
+        weighedMap[x][y].increase(cast(ubyte) (index*256 / sampledData.length));
         weighedMap[x][y].addresses ~= index;
     }
 
@@ -63,7 +68,7 @@ int main(string[] args) {
                                 Point(20, 0),
                                 Point(256*pxsize + 20, 256*pxsize),
                                 weighedMap,
-                                data.length
+                                sampledData.length
                             );
 
     // Padd small files
@@ -72,13 +77,13 @@ int main(string[] args) {
     auto bitmapCapacity = (bitmapEnd.x - bitmapOrigin.x)
                         * (bitmapEnd.y - bitmapOrigin.y) / 8;
 
-    if (data.length < bitmapCapacity) {
-        data ~= repeat(0).take(bitmapCapacity - data.length)
+    if (sampledData.length < bitmapCapacity) {
+        sampledData ~= repeat(0).take(bitmapCapacity - sampledData.length)
                          .map!(to!ubyte)
                          .array;
     }
 
-    auto bitmapRegion = new BitmapRegion(bitmapOrigin, bitmapEnd, data);
+    auto bitmapRegion = new BitmapRegion(bitmapOrigin, bitmapEnd, sampledData);
 
     auto hexdumpRegion = new HexdumpRegion(
                                 Point(bitmapRegion.end.x, 0),
@@ -95,6 +100,7 @@ int main(string[] args) {
 
     bool isSelectingFromBitmap;
     size_t addressOne, addressTwo;
+    size_t fakeAddressOne, fakeAddressTwo;
 
     auto font = new OperatingSystemFont("fixed", 13);
 
@@ -125,6 +131,8 @@ int main(string[] args) {
                     addressOne = event.y * data.length
                               / (bitmapRegion.end.y - bitmapRegion.origin.y);
 
+                    fakeAddressOne = addressOne*sampledData.length/data.length;
+
                     if (!bitmapRegion.selecting) {
                         windowRegion.setAddressTextOne(addressOne);
                     }
@@ -137,9 +145,11 @@ int main(string[] args) {
                     bitmapRegion.setMarkTwo(Point(event.x, event.y));
                     addressTwo = event.y * data.length
                           / (bitmapRegion.end.y - bitmapRegion.origin.y);
+                    fakeAddressTwo = addressTwo*sampledData.length/data.length;
                     windowRegion.setAddressTextTwo(addressTwo);
 
-                    weighedMapRegion.setDisplayRange(addressOne, addressTwo);
+                    weighedMapRegion.setDisplayRange(fakeAddressOne,
+                                                     fakeAddressTwo);
                 }
             }
 
