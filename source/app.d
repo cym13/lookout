@@ -17,8 +17,9 @@ import lookout.weighedMap;
 import lookout.weighedRegion;
 import lookout.windowRegion;
 
-void redraw(SimpleWindow window, Region[] regions) {
+void redraw(SimpleWindow window, Region[] regions, OperatingSystemFont font) {
     auto painter = window.draw();
+    painter.setFont(font);
 
     foreach (region ; regions)
         region.redraw(painter);
@@ -95,10 +96,12 @@ int main(string[] args) {
     bool isSelectingFromBitmap;
     size_t addressOne, addressTwo;
 
-    window.redraw(regionsToBeDrawn);
+    auto font = new OperatingSystemFont("fixed", 13);
+
+    window.redraw(regionsToBeDrawn, font);
     window.eventLoop(20,
         delegate () {
-            window.redraw(regionsToBeDrawn);
+            window.redraw(regionsToBeDrawn, font);
         },
         delegate (MouseEvent event) {
             // Mouse in weighedmap panel
