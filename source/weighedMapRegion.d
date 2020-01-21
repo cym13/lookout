@@ -3,11 +3,13 @@ module lookout.weighedMapRegion;
 import std.algorithm;
 import std.typecons;
 
+import std.stdio;
+
 import arsd.simpledisplay;
 
-import lookout.globalState;
 import lookout.region;
 import lookout.weighedMap;
+import lookout.eventManager;
 
 class WeighedMapRegion : Region {
     WeighedMap     weighedMap;
@@ -25,12 +27,19 @@ class WeighedMapRegion : Region {
     }
     CacheAddress[256][256] positionCache;
     bool hasPositionCache = false;
+    uint pxsize;
 
-    this(Point origin, Point end, WeighedMap wmap, size_t dataLength) {
+    this(Point origin,
+         Point end,
+         WeighedMap wmap,
+         size_t dataLength,
+         uint pxsize)
+    {
         super(origin, end);
         this.weighedMap = wmap;
         this.dataLength = dataLength;
         this.currentState = WeighedMapState.DEFAULT;
+        this.pxsize = pxsize;
         displayRange = AddressRange(0, dataLength);
 
         hasChanged = true;
@@ -48,39 +57,30 @@ class WeighedMapRegion : Region {
         hasChanged       = true;
     }
 
-    void redrawFuture(ScreenPainter painter) {
-        // TODO
+    void drawPixel(ScreenPainter painter,
+                   Point p,
+                   ubyte weight,
+                   ubyte position)
+    {
+        Color pixelColor = Color.fromIntegers(
+                                       position*weight/64,
+                                       weight,
+                                       (256-position)*weight/64,
+                                   );
+
+        painter.fillColor    = pixelColor;
+        painter.outlineColor = pixelColor;
+
+        painter.drawRectangle(Point(origin.x + p.x*pxsize,
+                                    origin.y + p.y*pxsize),
+                              Point(origin.x + (p.x+1)*pxsize,
+                                    origin.y + (p.y+1)*pxsize));
     }
 
-    override
-    void redraw(ScreenPainter painter) {
-        if (!hasChanged)
-            return;
-
-        hasChanged = false;
-
-        if (displayRange.length == 0)
-            return;
-
+    void drawWeighMap(ScreenPainter painter) {
         painter.fillColor    = Color.black;
         painter.outlineColor = Color.black;
         painter.drawRectangle(origin, end);
-
-        void drawPixel(int x, int y, ubyte weight, ubyte position) {
-            Color pixelColor = Color.fromIntegers(
-                                           position*weight/64,
-                                           weight,
-                                           (256-position)*weight/64,
-                                       );
-
-            painter.fillColor    = pixelColor;
-            painter.outlineColor = pixelColor;
-
-            painter.drawRectangle(Point(origin.x + x*pxsize,
-                                        origin.y + y*pxsize),
-                                  Point(origin.x + (x+1)*pxsize,
-                                        origin.y + (y+1)*pxsize));
-        }
 
         foreach (x ; 0..256) {
             foreach (y ; 0..256) {
@@ -89,7 +89,8 @@ class WeighedMapRegion : Region {
 
                 if (hasPositionCache) {
                     if (positionCache[x][y].isInRange) {
-                        drawPixel(x, y,
+                        drawPixel(painter,
+                                  Point(x, y),
                                   weighedMap[x][y].weight,
                                   positionCache[x][y].position);
                     }
@@ -120,31 +121,48 @@ class WeighedMapRegion : Region {
 
                 positionCache[x][y].position  = position;
 
-                drawPixel(x, y, weighedMap[x][y].weight, position);
+                drawPixel(painter,
+                          Point(x, y),
+                          weighedMap[x][y].weight,
+                          position);
             }
         }
 
         // Now we have a cache
         hasPositionCache = true;
+    }
 
-        if (cross.isNull)
-            return;
-
+    void drawCross(ScreenPainter painter, Point p) {
         painter.outlineColor = Color.red;
-        painter.drawLine(Point(cross.get().x, origin.y),
-                         Point(cross.get().x, end.y));
-        painter.drawLine(Point(origin.x, cross.get().y),
-                         Point(end.x, cross.get().y));
+        painter.drawLine(Point(p.x, origin.y), Point(p.x, end.y));
+        painter.drawLine(Point(origin.x, p.y), Point(end.x, p.y));
     }
 
-    void setCross(Point p) {
-        cross = nullable(p);
-        hasChanged = true;
-    }
+    override
+    void redraw(ScreenPainter painter) {
+        if (currentState == WeighedMapState.DEFAULT) {
+            auto cs = cast(Default) currentState;
 
-    void removeCross() {
-        cross = Nullable!Point.init;
-        hasChanged = true;
+            if (displayRange.length == 0)
+                return;
+
+            drawWeighMap(painter);
+
+            if (!cs.position.inRegion(this))
+                return;
+
+            drawCross(painter, cs.position);
+
+            currentState = cs.update();
+        }
+        else if (currentState == WeighedMapState.SELECTING) {
+            auto cs = cast(Selecting) currentState;
+            currentState = cs.update();
+        }
+        else if (currentState == WeighedMapState.SHOWING_SELECTION) {
+            auto cs = cast(ShowingSelection) currentState;
+            currentState = cs.update();
+        }
     }
 }
 
@@ -191,13 +209,27 @@ static this() {
 
 class Default : State {
     Point position;
-    bool LeftButtonPressed;
+    bool  LeftButtonPressed;
+
+    this() {
+        EventManager.get().register(&this.notify);
+    }
 
     override
-    void notify(LookoutEvent ev, Point p) {
-        if (ev == LookoutEvent.LB_MOTION)
-            LeftButtonPressed = true;
-        position = p;
+    void notify(Event ev) {
+        switch (ev.type) {
+            case LookoutEvent.MOUSE_LB_MOTION:
+                LeftButtonPressed = true;
+                position = ev.data.get!Point;
+                break;
+
+            case LookoutEvent.MOUSE_MOTION:
+                position = ev.data.get!Point;
+                break;
+
+            default:
+                break;
+        }
     }
 
     override
@@ -205,11 +237,14 @@ class Default : State {
         if (LeftButtonPressed) {
             LeftButtonPressed = false;
 
+        /* At the moment, don't bother with selection
+
             auto next = cast(Selecting) WeighedMapState.SELECTING;
             next.origin   = this.position;
             next.position = this.position;
 
             return next;
+        */
         }
         return WeighedMapState.DEFAULT;
     }
@@ -220,11 +255,25 @@ class Selecting : State {
     Point position;
     bool  LeftButtonReleased;
 
+    this() {
+        EventManager.get().register(&this.notify);
+    }
+
     override
-    void notify(LookoutEvent ev, Point p) {
-        if (ev == LookoutEvent.LB_RELEASED)
-            LeftButtonReleased = true;
-        position = p;
+    void notify(Event ev) {
+        switch (ev.type) {
+            case LookoutEvent.MOUSE_LB_RELEASED:
+                LeftButtonReleased = true;
+                position = ev.data.get!Point;
+                break;
+
+            case LookoutEvent.MOUSE_MOTION:
+                position = ev.data.get!Point;
+                break;
+
+            default:
+                break;
+        }
     }
 
     override
@@ -246,21 +295,29 @@ class ShowingSelection : State {
     bool  LeftButtonPressed;
     bool  LeftButtonClicked;
 
+    this() {
+        EventManager.get().register(&this.notify);
+    }
+
     override
-    void notify(LookoutEvent ev, Point p) {
-        if (ev == LookoutEvent.LB_PRESSED) {
-            LeftButtonClicked = true;
-            return;
-        }
+    void notify(Event ev) {
+        switch (ev.type) {
+            case LookoutEvent.MOUSE_LB_PRESSED:
+                LeftButtonClicked = true;
+                break;
 
-        if (LeftButtonPressed && ev == LookoutEvent.LB_MOTION) {
-            LeftButtonPressed = false;
-            return;
-        }
+            case LookoutEvent.MOUSE_LB_MOTION:
+                if (LeftButtonPressed)
+                    LeftButtonPressed = false;
+                break;
 
-        if (LeftButtonPressed && ev == LookoutEvent.LB_RELEASED) {
-            LeftButtonClicked = true;
-            return;
+            case LookoutEvent.MOUSE_LB_RELEASED:
+                if (LeftButtonPressed)
+                    LeftButtonClicked = true;
+                break;
+
+            default:
+                break;
         }
     }
 

@@ -6,16 +6,17 @@ import std.file;
 import std.random;
 import std.range;
 import std.stdio;
+import std.variant;
 
 import arsd.simpledisplay;
 
 import lookout.bitmapRegion;
-import lookout.globalState;
 import lookout.hexdumpRegion;
 import lookout.region;
 import lookout.weighedMap;
 import lookout.weighedMapRegion;
 import lookout.windowRegion;
+import lookout.eventManager;
 
 void redraw(SimpleWindow window, Region[] regions, OperatingSystemFont font) {
     auto painter = window.draw();
@@ -30,6 +31,8 @@ int main(string[] args) {
         writeln("Usage: lookout FILE");
         return 1;
     }
+
+    uint pxsize = 3;
 
     auto window = new SimpleWindow(256*pxsize + 20 + 256 + 280,
                                    256*pxsize + 20,
@@ -61,14 +64,16 @@ int main(string[] args) {
 
     auto windowRegion = new WindowRegion(
                                 Point(0, 0),
-                                Point(window.width, window.height)
+                                Point(window.width, window.height),
+                                pxsize
                             );
 
     auto weighedMapRegion = new WeighedMapRegion(
                                 Point(20, 0),
                                 Point(256*pxsize + 20, 256*pxsize),
                                 weighedMap,
-                                sampledData.length
+                                sampledData.length,
+                                pxsize,
                             );
 
     // Padd small files
@@ -91,12 +96,7 @@ int main(string[] args) {
                                 data
                             );
 
-    Region[] regionsToBeDrawn = [
-        weighedMapRegion,
-        windowRegion,
-        bitmapRegion,
-        hexdumpRegion,
-    ];
+    auto eventManager = EventManager.get();
 
     bool isSelectingFromBitmap;
     size_t addressOne, addressTwo;
@@ -104,7 +104,12 @@ int main(string[] args) {
 
     auto font = new OperatingSystemFont("fixed", 13);
 
-    enum oldSystem = true; // DEBUG
+    Region[] regionsToBeDrawn = [
+        windowRegion,
+        weighedMapRegion,
+        bitmapRegion,
+        hexdumpRegion,
+    ];
 
     window.redraw(regionsToBeDrawn, font);
     window.eventLoop(20,
@@ -112,97 +117,29 @@ int main(string[] args) {
             window.redraw(regionsToBeDrawn, font);
         },
         delegate (MouseEvent event) {
-            static if (oldSystem) { // DEBUG
-
-            // Mouse in weighedmap panel
-            if (Point(event.x, event.y).inRegion(weighedMapRegion)) {
-                weighedMapRegion.setCross(Point(event.x, event.y));
-                windowRegion.setCoordinateText(Point(event.x, event.y));
-            }
-            else {
-                weighedMapRegion.removeCross();
-                windowRegion.removeCoordinateText();
-            }
-
-            // Mouse in bitmap panel
-            if (Point(event.x, event.y).inRegion(bitmapRegion)) {
-                hexdumpRegion.setAddress(event.y * data.length
-                              / (bitmapRegion.end.y - bitmapRegion.origin.y));
-
-                if (!isSelectingFromBitmap) {
-                    bitmapRegion.setMarkOne(Point(event.x, event.y));
-
-                    addressOne = event.y * data.length
-                              / (bitmapRegion.end.y - bitmapRegion.origin.y);
-
-                    fakeAddressOne = addressOne*sampledData.length/data.length;
-
-                    if (!bitmapRegion.selecting) {
-                        windowRegion.setAddressTextOne(addressOne);
-                    }
-                }
-
-                if (event.type == MouseEventType.motion &&
-                        event.modifierState & ModifierState.leftButtonDown) {
-                    isSelectingFromBitmap = true;
-
-                    bitmapRegion.setMarkTwo(Point(event.x, event.y));
-                    addressTwo = event.y * data.length
-                          / (bitmapRegion.end.y - bitmapRegion.origin.y);
-                    fakeAddressTwo = addressTwo*sampledData.length/data.length;
-                    windowRegion.setAddressTextTwo(addressTwo);
-
-                    weighedMapRegion.setDisplayRange(fakeAddressOne,
-                                                     fakeAddressTwo);
-                }
-            }
-
-            // Stop address range selection
-            if (isSelectingFromBitmap &&
-                    event.type == MouseEventType.buttonPressed)
-            {
-                isSelectingFromBitmap = false;
-                bitmapRegion.removeMarkTwo();
-                windowRegion.removeAddressTextTwo();
-
-                weighedMapRegion.removeDisplayRange();
-            }
-
-            } else static if (!oldSystem) { // DEBUG
-
             // New State/Event system
             if (event.type == MouseEventType.motion &&
                     event.modifierState & ModifierState.leftButtonDown)
             {
-                foreach (region ; regionsToBeDrawn) {
-                    region.currentState.notify(LookoutEvent.LB_MOTION,
-                                               Point(event.x, event.y));
-                }
+                eventManager.notify(Event.get(LookoutEvent.MOUSE_LB_MOTION,
+                                              Point(event.x, event.y)));
             }
             else if (event.type == MouseEventType.buttonReleased &&
                     event.button == MouseButton.left)
             {
-                foreach (region ; regionsToBeDrawn) {
-                    region.currentState.notify(LookoutEvent.LB_RELEASED,
-                                               Point(event.x, event.y));
-                }
+                eventManager.notify(Event.get(LookoutEvent.MOUSE_LB_RELEASED,
+                                              Point(event.x, event.y)));
             }
             else if (event.type == MouseEventType.buttonPressed &&
                     event.button == MouseButton.left)
             {
-                foreach (region ; regionsToBeDrawn) {
-                    region.currentState.notify(LookoutEvent.LB_PRESSED,
-                                               Point(event.x, event.y));
-                }
+                eventManager.notify(Event.get(LookoutEvent.MOUSE_LB_PRESSED,
+                                              Point(event.x, event.y)));
             }
             else {
-                foreach (region ; regionsToBeDrawn) {
-                    region.currentState.notify(LookoutEvent.MOTION,
-                                               Point(event.x, event.y));
-                }
+                eventManager.notify(Event.get(LookoutEvent.MOUSE_MOTION,
+                                              Point(event.x, event.y)));
             }
-
-            } // DEBUG
         },
     );
 

@@ -8,6 +8,7 @@ import std.range;
 import arsd.simpledisplay;
 
 import lookout.region;
+import lookout.eventManager;
 
 class HexdumpRegion : Region {
     size_t  address;
@@ -18,6 +19,18 @@ class HexdumpRegion : Region {
         this.data = data;
         this.currentState = HexmapRegionState.DEFAULT;
         hasChanged = true;
+    }
+
+    override
+    void notify(Event ev) {
+        if (ev.type == LookoutEvent.BM_CHANGE_CURSOR) {
+            this.address = positionToAddress(ev.data.get!int);
+            hasChanged = true;
+        }
+    }
+
+    size_t positionToAddress(int pos) {
+        return min(pos * data.length / 256, data.length-8*45);
     }
 
     string hexdump(size_t address) {
@@ -41,11 +54,6 @@ class HexdumpRegion : Region {
                     );
         }
         return result;
-    }
-
-    void setAddress(size_t address) {
-        this.address = address;
-        hasChanged = true;
     }
 
     override
@@ -81,11 +89,11 @@ static this() {
 class Default : State {
     ulong position;
 
-    void notify(LookoutEvent ev, Point p) {}
-
-    void notify(LookoutEvent ev, ulong address) {
-        position = address;
+    this() {
+        EventManager.get().register(&this.notify);
     }
+
+    void notify(Event ev) {}
 
     State update() {
         return this;

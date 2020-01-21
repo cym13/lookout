@@ -2,6 +2,8 @@ module lookout.region;
 
 import arsd.simpledisplay;
 
+import lookout.eventManager;
+
 class Region {
     Point origin;
     Point end;
@@ -14,6 +16,8 @@ class Region {
 
         this.origin     = origin;
         this.end        = end;
+
+        EventManager.get().register(&this.notify);
     }
 
     @property
@@ -26,6 +30,8 @@ class Region {
         return end.y - origin.y;
     }
 
+    void notify(Event ev) {}
+
     void redraw(ScreenPainter) {}
 }
 
@@ -35,15 +41,7 @@ bool inRegion(Point p, Region r) {
 }
 
 interface State {
-    void notify(LookoutEvent ev, Point p);
+    void notify(Event ev);
     State update();
-}
-
-enum LookoutEvent {
-    NOTHING,
-    MOTION,
-    LB_PRESSED,
-    LB_RELEASED,
-    LB_MOTION,
 }
 

@@ -6,17 +6,19 @@ import std.typecons;
 
 import arsd.simpledisplay;
 
-import lookout.globalState;
+import lookout.eventManager;
 import lookout.region;
 
 class WindowRegion : Region {
     Nullable!Point  coordinates;
     Nullable!size_t addressOne;
     Nullable!size_t addressTwo;
+    uint            pxsize;
 
-    this(Point origin, Point end) {
+    this(Point origin, Point end, uint pxsize) {
         super(origin, end);
         this.currentState = WindowState.DEFAULT;
+        this.pxsize = pxsize;
         hasChanged = true;
     }
 
@@ -99,7 +101,11 @@ static this() {
 }
 
 class Default : State {
-    void notify(LookoutEvent ev, Point p) {}
+    this() {
+        EventManager.get().register(&this.notify);
+    }
+
+    void notify(Event ev) {}
 
     State update() {
         return this;
