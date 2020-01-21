@@ -17,6 +17,7 @@ class BitmapRegion : Region {
 
     this(Point origin, Point end, ubyte[] data) {
         super(origin, end);
+        this.currentState = BitmapState.DEFAULT;
 
         this.markOne = Point(origin.x, origin.y);
 
@@ -58,6 +59,40 @@ class BitmapRegion : Region {
         selecting = false;
         markOne = Point(end.x, end.y);
         hasChanged = true;
+    }
+
+
+    void drawCursor(ScreenPainter painter, int position) {
+        painter.outlineColor = Color.red;
+        painter.drawLine(Point(0, position), Point(width, position));
+    }
+
+    void drawSelection(ScreenPainter painter, int start, int finish) {
+        painter.outlineColor = Color.gray;
+        painter.fillColor    = Color.gray;
+        painter.drawRectangle(Point(0, 0),      Point(width, start));
+        painter.drawRectangle(Point(0, finish), Point(width, height));
+
+        drawCursor(painter, start);
+        drawCursor(painter, finish);
+    }
+
+    void redrawFuture(ScreenPainter painter) {
+        if (currentState is BitmapState.DEFAULT) {
+            auto cs = cast(Default) currentState;
+            drawCursor(painter, cs.position.y);
+            currentState = cs.update();
+        }
+        else if (currentState is BitmapState.SELECTING) {
+            auto cs = cast(Selecting) currentState;
+            drawSelection(painter, cs.origin.y, cs.position.y);
+            currentState = cs.update();
+        }
+        else if (currentState is BitmapState.SHOWING_SELECTION) {
+            auto cs = cast(ShowingSelection) currentState;
+            drawSelection(painter, cs.origin.y, cs.position.y);
+            currentState = cs.update();
+        }
     }
 
     override
@@ -122,3 +157,101 @@ class BitmapRegion : Region {
     }
 }
 
+private:
+
+struct BitmapState {
+    static State DEFAULT;
+    static State SELECTING;
+    static State SHOWING_SELECTION;
+}
+
+static this() {
+    BitmapState.DEFAULT           = new Default();
+    BitmapState.SELECTING         = new Selecting();
+    BitmapState.SHOWING_SELECTION = new ShowingSelection();
+}
+
+class Default : State {
+    Point position;
+    bool LeftButtonPressed;
+
+    override
+    void notify(LookoutEvent ev, Point p) {
+        if (ev == LookoutEvent.LB_MOTION)
+            LeftButtonPressed = true;
+        position = p;
+    }
+
+    override
+    State update() {
+        if (LeftButtonPressed) {
+            LeftButtonPressed = false;
+
+            auto next = cast(Selecting) BitmapState.SELECTING;
+            next.origin   = this.position;
+            next.position = this.position;
+
+            return next;
+        }
+        return BitmapState.DEFAULT;
+    }
+}
+
+class Selecting : State {
+    Point origin;
+    Point position;
+    bool  LeftButtonReleased;
+
+    override
+    void notify(LookoutEvent ev, Point p) {
+        if (ev == LookoutEvent.LB_RELEASED)
+            LeftButtonReleased = true;
+        position = p;
+    }
+
+    override
+    State update() {
+        if (LeftButtonReleased) {
+            LeftButtonReleased = false;
+            auto next = cast(ShowingSelection) BitmapState.SHOWING_SELECTION;
+            next.origin   = this.origin;
+            next.position = this.position;
+            return next;
+        }
+        return BitmapState.SELECTING;
+    }
+}
+
+class ShowingSelection : State {
+    Point origin;
+    Point position;
+    bool  LeftButtonPressed;
+    bool  LeftButtonClicked;
+
+    override
+    void notify(LookoutEvent ev, Point p) {
+        if (ev == LookoutEvent.LB_PRESSED) {
+            LeftButtonClicked = true;
+            return;
+        }
+
+        if (LeftButtonPressed && ev == LookoutEvent.LB_MOTION) {
+            LeftButtonPressed = false;
+            return;
+        }
+
+        if (LeftButtonPressed && ev == LookoutEvent.LB_RELEASED) {
+            LeftButtonClicked = true;
+            return;
+        }
+    }
+
+    override
+    State update() {
+        if (LeftButtonClicked) {
+            LeftButtonClicked = false;
+            return BitmapState.DEFAULT;
+        }
+        return BitmapState.SHOWING_SELECTION;
+    }
+}

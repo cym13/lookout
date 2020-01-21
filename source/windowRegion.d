@@ -16,6 +16,7 @@ class WindowRegion : Region {
 
     this(Point origin, Point end) {
         super(origin, end);
+        this.currentState = WindowState.DEFAULT;
         hasChanged = true;
     }
 
@@ -84,6 +85,24 @@ class WindowRegion : Region {
                                         addressOne, addressTwo));
             }
         }
+    }
+}
+
+private:
+
+struct WindowState {
+    static State DEFAULT;
+}
+
+static this() {
+    WindowState.DEFAULT = new Default();
+}
+
+class Default : State {
+    void notify(LookoutEvent ev, Point p) {}
+
+    State update() {
+        return this;
     }
 }
 

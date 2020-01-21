@@ -30,6 +30,7 @@ class WeighedMapRegion : Region {
         super(origin, end);
         this.weighedMap = wmap;
         this.dataLength = dataLength;
+        this.currentState = WeighedMapState.DEFAULT;
         displayRange = AddressRange(0, dataLength);
 
         hasChanged = true;
@@ -45,6 +46,10 @@ class WeighedMapRegion : Region {
         displayRange     = AddressRange(0, dataLength);
         hasPositionCache = false;
         hasChanged       = true;
+    }
+
+    void redrawFuture(ScreenPainter painter) {
+        // TODO
     }
 
     override
@@ -167,5 +172,104 @@ struct AddressRange {
 
     bool containsAny(size_t[] addresses) {
         return addresses[].any!(address => origin <= address && address <= end);
+    }
+}
+
+private:
+
+struct WeighedMapState {
+    static State DEFAULT;
+    static State SELECTING;
+    static State SHOWING_SELECTION;
+}
+
+static this() {
+    WeighedMapState.DEFAULT           = new Default();
+    WeighedMapState.SELECTING         = new Selecting();
+    WeighedMapState.SHOWING_SELECTION = new ShowingSelection();
+}
+
+class Default : State {
+    Point position;
+    bool LeftButtonPressed;
+
+    override
+    void notify(LookoutEvent ev, Point p) {
+        if (ev == LookoutEvent.LB_MOTION)
+            LeftButtonPressed = true;
+        position = p;
+    }
+
+    override
+    State update() {
+        if (LeftButtonPressed) {
+            LeftButtonPressed = false;
+
+            auto next = cast(Selecting) WeighedMapState.SELECTING;
+            next.origin   = this.position;
+            next.position = this.position;
+
+            return next;
+        }
+        return WeighedMapState.DEFAULT;
+    }
+}
+
+class Selecting : State {
+    Point origin;
+    Point position;
+    bool  LeftButtonReleased;
+
+    override
+    void notify(LookoutEvent ev, Point p) {
+        if (ev == LookoutEvent.LB_RELEASED)
+            LeftButtonReleased = true;
+        position = p;
+    }
+
+    override
+    State update() {
+        if (LeftButtonReleased) {
+            LeftButtonReleased = false;
+            auto next = cast(ShowingSelection) WeighedMapState.SHOWING_SELECTION;
+            next.origin   = this.origin;
+            next.position = this.position;
+            return next;
+        }
+        return WeighedMapState.SELECTING;
+    }
+}
+
+class ShowingSelection : State {
+    Point origin;
+    Point position;
+    bool  LeftButtonPressed;
+    bool  LeftButtonClicked;
+
+    override
+    void notify(LookoutEvent ev, Point p) {
+        if (ev == LookoutEvent.LB_PRESSED) {
+            LeftButtonClicked = true;
+            return;
+        }
+
+        if (LeftButtonPressed && ev == LookoutEvent.LB_MOTION) {
+            LeftButtonPressed = false;
+            return;
+        }
+
+        if (LeftButtonPressed && ev == LookoutEvent.LB_RELEASED) {
+            LeftButtonClicked = true;
+            return;
+        }
+    }
+
+    override
+    State update() {
+        if (LeftButtonClicked) {
+            LeftButtonClicked = false;
+            return WeighedMapState.DEFAULT;
+        }
+        return WeighedMapState.SHOWING_SELECTION;
     }
 }

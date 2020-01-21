@@ -104,12 +104,16 @@ int main(string[] args) {
 
     auto font = new OperatingSystemFont("fixed", 13);
 
+    enum oldSystem = true; // DEBUG
+
     window.redraw(regionsToBeDrawn, font);
     window.eventLoop(20,
         delegate () {
             window.redraw(regionsToBeDrawn, font);
         },
         delegate (MouseEvent event) {
+            static if (oldSystem) { // DEBUG
+
             // Mouse in weighedmap panel
             if (Point(event.x, event.y).inRegion(weighedMapRegion)) {
                 weighedMapRegion.setCross(Point(event.x, event.y));
@@ -163,6 +167,42 @@ int main(string[] args) {
 
                 weighedMapRegion.removeDisplayRange();
             }
+
+            } else static if (!oldSystem) { // DEBUG
+
+            // New State/Event system
+            if (event.type == MouseEventType.motion &&
+                    event.modifierState & ModifierState.leftButtonDown)
+            {
+                foreach (region ; regionsToBeDrawn) {
+                    region.currentState.notify(LookoutEvent.LB_MOTION,
+                                               Point(event.x, event.y));
+                }
+            }
+            else if (event.type == MouseEventType.buttonReleased &&
+                    event.button == MouseButton.left)
+            {
+                foreach (region ; regionsToBeDrawn) {
+                    region.currentState.notify(LookoutEvent.LB_RELEASED,
+                                               Point(event.x, event.y));
+                }
+            }
+            else if (event.type == MouseEventType.buttonPressed &&
+                    event.button == MouseButton.left)
+            {
+                foreach (region ; regionsToBeDrawn) {
+                    region.currentState.notify(LookoutEvent.LB_PRESSED,
+                                               Point(event.x, event.y));
+                }
+            }
+            else {
+                foreach (region ; regionsToBeDrawn) {
+                    region.currentState.notify(LookoutEvent.MOTION,
+                                               Point(event.x, event.y));
+                }
+            }
+
+            } // DEBUG
         },
     );
 

@@ -10,12 +10,13 @@ import arsd.simpledisplay;
 import lookout.region;
 
 class HexdumpRegion : Region {
-    size_t address;
+    size_t  address;
     ubyte[] data;
 
     this(Point origin, Point end, ref ubyte[] data) {
         super(origin, end);
         this.data = data;
+        this.currentState = HexmapRegionState.DEFAULT;
         hasChanged = true;
     }
 
@@ -54,6 +55,9 @@ class HexdumpRegion : Region {
 
         hasChanged = false;
 
+        if (currentState != HexmapRegionState.DEFAULT)
+            return;
+
         painter.fillColor    = Color.black;
         painter.outlineColor = Color.black;
         painter.drawRectangle(origin, end);
@@ -64,3 +68,26 @@ class HexdumpRegion : Region {
     }
 }
 
+private:
+
+struct HexmapRegionState {
+    static State DEFAULT;
+}
+
+static this() {
+    HexmapRegionState.DEFAULT = new Default();
+}
+
+class Default : State {
+    ulong position;
+
+    void notify(LookoutEvent ev, Point p) {}
+
+    void notify(LookoutEvent ev, ulong address) {
+        position = address;
+    }
+
+    State update() {
+        return this;
+    }
+}
